@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel dos boletins de urna</title>
+<style>
+.viz-root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6; --series-2: #eb6834;
+  --wash: rgba(42,120,214,0.10);
+}
+@media (prefers-color-scheme: dark) {
+  .viz-root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface-1: #1a1a19;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #d95926;
+    --wash: rgba(57,135,229,0.14);
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+.viz-root { background: var(--page); color: var(--text-primary); min-height: 100vh;
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 24px; }
+.wrap { max-width: 1040px; margin: 0 auto; }
+h1 { font-size: 22px; margin: 0 0 4px; font-weight: 600; }
+h2 { font-size: 15px; margin: 0 0 2px; font-weight: 600; }
+.sub { color: var(--text-secondary); margin: 0 0 12px; font-size: 13px; }
+.fonte { color: var(--text-muted); font-size: 12px; margin: 0 0 18px; word-break: break-all; }
+.filtros { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 16px; align-items: end; }
+.filtros label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-secondary); }
+select, input { font: inherit; color: var(--text-primary); background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; min-width: 150px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile, .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.tile .lab { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+.tile .val { font-size: 24px; font-weight: 600; margin-top: 2px; }
+.tile .det { font-size: 12px; color: var(--text-muted); }
+.card { margin-bottom: 16px; }
+.legenda { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); margin: 0 0 8px; }
+.legenda span, .tile .lab i { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { fill: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+svg text.val { fill: var(--text-secondary); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { color: var(--text-secondary); font-weight: 500; }
+th:first-child, td:first-child { text-align: left; }
+.scroll { overflow-x: auto; }
+details { margin-top: 10px; } summary { cursor: pointer; color: var(--text-secondary); font-size: 13px; }
+.tip { position: fixed; pointer-events: none; background: var(--surface-1); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12); z-index: 10; max-width: 280px; }
+.tip b { font-weight: 600; } .tip .row { display: flex; align-items: center; gap: 6px; }
+.erro { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+code { font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="viz-root"><div class="wrap">
+  <h1>Painel dos boletins de urna</h1>
+  <p class="fonte" id="fonte"></p>
+
+  <div id="erro" class="erro" hidden>
+    <h2>Dados não encontrados</h2>
+    <p class="sub">Gere os dados primeiro, na pasta do projeto:</p>
+    <code>python preparar.py bweb_1t_XX_....csv bweb_2t_XX_....csv</code>
+    <p class="sub">Depois abra este arquivo de novo.</p>
+  </div>
+
+  <div id="app" hidden>
+    <div class="filtros">
+      <label>Município <select id="f-mun"></select></label>
+      <label>Horário usado <select id="f-hora"></select></label>
+      <label>Agrupar a cada <select id="f-gr">
+        <option value="60">1 hora</option><option value="15">15 min</option><option value="5">5 min</option>
+      </select></label>
+      <label>Candidato (histograma e tabela) <select id="f-cand"></select></label>
+    </div>
+
+    <div class="tiles" id="tiles"></div>
+
+    <section class="card" id="sec-faixas">
+      <h2>Variação de votos entre turnos, por horário</h2>
+      <p class="sub" id="sub-faixas"></p>
+      <div class="legenda" id="leg-faixas"></div>
+      <div id="c-faixas"></div>
+      <details><summary>Ver tabela</summary><div class="scroll"><table id="t-faixas"></table></div></details>
+    </section>
+
+    <section class="card">
+      <h2>Apuração acumulada pela hora de chegada do boletim</h2>
+      <p class="sub" id="sub-acum"></p>
+      <div class="legenda" id="leg-acum"></div>
+      <div id="c-acum"></div>
+    </section>
+
+    <section class="card" id="sec-hist">
+      <h2>Distribuição da variação por seção</h2>
+      <p class="sub" id="sub-hist"></p>
+      <div id="c-hist"></div>
+    </section>
+
+    <section class="card" id="sec-perdas">
+      <h2>Seções com maior perda de votos entre turnos</h2>
+      <p class="sub" id="sub-perdas"></p>
+      <div class="scroll"><table id="t-perdas"></table></div>
+    </section>
+
+    <p class="fonte">Para perguntas livres, use uma IA com o <code>AGENTS.md</code> deste projeto (veja o README).
+      Os números aqui são somas diretas dos boletins; diferenças entre grupos de seções não indicam, por si só, irregularidade.</p>
+  </div>
+</div></div>
+<div class="tip" id="tip" hidden></div>
+
+<script src="dados.js"></script>
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  if (!window.DADOS || !DADOS.colunas) { $("erro").hidden = false; return; }
+  $("app").hidden = false;
+
+  const C = DADOS.colunas, N = C.uf.length;
+  const CANDS = DADOS.candidatos.slice(0, 2);   // duas primeiras colunas do 2o turno
+  const TURNOS = DADOS.turnos;
+  const DOIS = TURNOS.includes(1) && TURNOS.includes(2);
+  const COR = ["var(--series-1)", "var(--series-2)"];
+  const nome = (c) => c.nome.split(" ").map(p => p[0] + p.slice(1).toLowerCase()).join(" ");
+  const fmt = (v, d = 0) => v == null || !isFinite(v) ? "–" : v.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const sinal = (v, d = 2) => (v > 0 ? "+" : "") + fmt(v, d);
+  const NS = "http://www.w3.org/2000/svg";
+  function s(tag, attrs, parent) {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function txt(parent, x, y, t, attrs = {}) { const e = s("text", Object.assign({ x, y }, attrs), parent); e.textContent = t; return e; }
+
+  // --- fonte -----------------------------------------------------------------
+  $("fonte").textContent = "Fonte: " + DADOS.fontes.map(f => `${f.arquivo} (gerado pelo TSE em ${f.dt_geracao} ${f.hh_geracao}, sha256 ${f.sha256.slice(0, 16)}…)`).join(" · ");
+
+  // --- filtros ---------------------------------------------------------------
+  const muns = [...new Set(C.nm_municipio)].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  $("f-mun").innerHTML = `<option value="">Todos (${fmt(muns.length)} municípios)</option>` + muns.map(m => `<option>${m}</option>`).join("");
+  const horas = [];
+  for (const t of TURNOS.slice().reverse()) {
+    horas.push({ v: `hora_encerramento_t${t}`, t, l: `Encerramento da urna, ${t}º turno` });
+    horas.push({ v: `hora_bu_recebido_t${t}`, t, l: `Chegada do boletim ao TSE, ${t}º turno` });
+  }
+  $("f-hora").innerHTML = horas.map(h => `<option value="${h.v}">${h.l}</option>`).join("");
+  $("f-cand").innerHTML = CANDS.map((c, i) => `<option value="${i}">${nome(c)}</option>`).join("");
+  ["f-mun", "f-hora", "f-gr", "f-cand"].forEach(id => $(id).addEventListener("change", render));
+
+  const rotuloHora = (c) => (c.includes("encerramento") ? "horário de encerramento da urna" : "horário de chegada do boletim ao TSE") + ` no ${c.slice(-1)}º turno`;
+  const minutos = (h) => h ? (+h.slice(0, 2)) * 60 + (+h.slice(3, 5)) : null;
+  const hhmm = (m) => String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+
+  // --- tooltip ---------------------------------------------------------------
+  const tip = $("tip");
+  function mostrar(ev, html) {
+    tip.innerHTML = html; tip.hidden = false;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = ev.clientX + 14, y = ev.clientY + 14;
+    if (x + w > innerWidth - 8) x = ev.clientX - w - 14;
+    if (y + h > innerHeight - 8) y = ev.clientY - h - 14;
+    tip.style.left = x + "px"; tip.style.top = y + "px";
+  }
+  const esconder = () => { tip.hidden = true; };
+  const linhaTip = (i, t) => `<div class="row"><span class="sw" style="background:${COR[i]}"></span>${t}</div>`;
+  function legenda(el) { el.innerHTML = CANDS.map((c, i) => `<span><i class="sw" style="background:${COR[i]}"></i>${nome(c)}</span>`).join(""); }
+
+  // --- eixos -----------------------------------------------------------------
+  function ticks(min, max, n = 5) {
+    const span = max - min || 1, passo0 = span / n, mag = Math.pow(10, Math.floor(Math.log10(passo0)));
+    const passo = [1, 2, 2.5, 5, 10].map(m => m * mag).find(p => span / p <= n) || mag * 10;
+    const out = []; for (let v = Math.floor(min / passo + 1e-9) * passo; v < max + passo - 1e-9; v += passo) out.push(+v.toFixed(10));
+    return out;
+  }
+  function gradeY(svg, y, vals, x0, x1, fmtv) {
+    for (const v of vals) {
+      s("line", { x1: x0, x2: x1, y1: y(v), y2: y(v), stroke: v === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }, svg);
+      txt(svg, x0 - 6, y(v) + 4, fmtv(v), { "text-anchor": "end" });
+    }
+  }
+  const barra = (x, y, w, h, up) => {  // 4px arredondado na ponta, reto na base
+    const r = Math.min(4, w / 2, Math.abs(h));
+    if (h <= 0) return "";
+    return up
+      ? `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`
+      : `M${x},${y}V${y + h - r}Q${x},${y + h} ${x + r},${y + h}H${x + w - r}Q${x + w},${y + h} ${x + w},${y + h - r}V${y}Z`;
+  };
+
+  // --- render ----------------------------------------------------------------
+  function render() {
+    esconder();
+    const mun = $("f-mun").value, campoHora = $("f-hora").value, gr = +$("f-gr").value, ci = +$("f-cand").value;
+    const idx = [];
+    for (let i = 0; i < N; i++) if (!mun || C.nm_municipio[i] === mun) idx.push(i);
+    const onde = mun ? mun : "todas as seções";
+    tiles(idx);
+    if (DOIS) { faixas(idx, campoHora, gr, onde); hist(idx, ci, onde); perdas(idx, ci, onde); }
+    ["sec-faixas", "sec-hist", "sec-perdas"].forEach(id => $(id).hidden = !DOIS);
+    acumulado(idx, campoHora, gr, onde);
+  }
+
+  function soma(idx, col) { let t = 0; const a = C[col]; if (!a) return null; for (const i of idx) t += a[i] || 0; return t; }
+
+  function tiles(idx) {
+    const T = TURNOS[TURNOS.length - 1];
+    let h = `<div class="tile"><div class="lab">Seções</div><div class="val">${fmt(idx.length)}</div>
+      <div class="det">${fmt(soma(idx, "comparecimento_t" + T))} votantes no ${T}º turno</div></div>`;
+    const val = soma(idx, "validos_t" + T);
+    CANDS.forEach((c, i) => {
+      const v2 = soma(idx, `${c.coluna}_t${T}`), p2 = 100 * v2 / val;
+      let det = `${fmt(v2)} votos no ${T}º turno`;
+      if (DOIS) {
+        const v1 = soma(idx, `${c.coluna}_t1`), p1 = 100 * v1 / soma(idx, "validos_t1");
+        det = `${fmt(v2)} votos (${sinal(100 * (v2 - v1) / v1, 1)}% vs 1º turno) · ${fmt(p1, 2)}% no 1º`;
+      }
+      h += `<div class="tile"><div class="lab"><i class="sw" style="background:${COR[i]}"></i>${nome(c)} · % válidos ${T}º turno</div>
+        <div class="val">${fmt(p2, 2)}%</div><div class="det">${det}</div></div>`;
+    });
+    $("tiles").innerHTML = h;
+  }
+
+  function agrupar(idx, campoHora, gr) {
+    const g = new Map(), H = C[campoHora];
+    for (const i of idx) {
+      const m = minutos(H[i]); if (m == null) continue;
+      const k = Math.floor(m / gr) * gr;
+      let o = g.get(k);
+      if (!o) { o = { k, n: 0, v1: 0, v2: 0, c1: CANDS.map(() => 0), c2: CANDS.map(() => 0) }; g.set(k, o); }
+      o.n++; o.v1 += C.validos_t1?.[i] || 0; o.v2 += C.validos_t2?.[i] || 0;
+      CANDS.forEach((c, j) => { o.c1[j] += C[c.coluna + "_t1"]?.[i] || 0; o.c2[j] += C[c.coluna + "_t2"]?.[i] || 0; });
+    }
+    return [...g.values()].sort((a, b) => a.k - b.k);
+  }
+
+  function faixas(idx, campoHora, gr, onde) {
+    const gs = agrupar(idx, campoHora, gr);
+    const rot = (o) => gr === 60 ? o.k / 60 + "h" : hhmm(o.k);
+    $("sub-faixas").textContent = `Aumento % dos votos de cada candidato do 1º para o 2º turno, nas mesmas seções, agrupadas por ${rotuloHora(campoHora)} · ${onde}. Faixas com poucas seções oscilam mais.`;
+    legenda($("leg-faixas"));
+    const el = $("c-faixas"); el.innerHTML = "";
+    const W = 980, H = 300, m = { l: 52, r: 12, t: 20, b: 40 };
+    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Aumento de votos por faixa de horário" }, el);
+    const vals = gs.flatMap(o => o.c2.map((v, j) => 100 * (v - o.c1[j]) / (o.c1[j] || NaN))).filter(isFinite);
+    const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
+    const tk = ticks(lo, hi); const y0 = Math.min(lo, tk[0]), y1 = Math.max(hi, tk[tk.length - 1]);
+    const y = (v) => m.t + (H - m.t - m.b) * (1 - (v - y0) / (y1 - y0 || 1));
+    gradeY(svg, y, tk, m.l, W - m.r, v => fmt(v) + "%");
+    const banda = (W - m.l - m.r) / Math.max(gs.length, 1);
+    const bw = Math.max(2, Math.min(24, (banda * 0.7 - 2) / 2));
+    const passoRot = Math.ceil(gs.length / 14);
+    gs.forEach((o, gi) => {
+      const cx = m.l + banda * gi + banda / 2;
+      o.c2.forEach((v2, j) => {
+        const p = 100 * (v2 - o.c1[j]) / o.c1[j]; if (!isFinite(p)) return;
+        const x = cx - bw - 1 + j * (bw + 2);
+        const up = p >= 0, ya = up ? y(p) : y(0), h = Math.abs(y(p) - y(0));
+        s("path", { d: barra(x, ya, bw, h, up), fill: COR[j] }, svg);
+        // rótulo para fora do par (esquerda / direita), para não cobrir a barra vizinha
+        if (gs.length <= 8) txt(svg, j === 0 ? x + bw : x, up ? y(p) - 5 : y(p) + 13, sinal(p, 1) + "%", { "text-anchor": j === 0 ? "end" : "start", class: "val" });
+      });
+      if (gi % passoRot === 0) txt(svg, cx, H - m.b + 16, rot(o), { "text-anchor": "middle" });
+      const hit = s("rect", { x: cx - banda / 2, y: m.t, width: banda, height: H - m.t - m.b, fill: "transparent" }, svg);
+      hit.addEventListener("mousemove", ev => mostrar(ev, `<b>${rot(o)}${gr < 60 ? "–" + hhmm(o.k + gr - 1) : ""}</b> · ${fmt(o.n)} seções<br>` +
+        CANDS.map((c, j) => linhaTip(j, `${nome(c)}: ${fmt(o.c1[j])} → ${fmt(o.c2[j])} (${sinal(100 * (o.c2[j] - o.c1[j]) / o.c1[j], 2)}%)`)).join("")));
+      hit.addEventListener("mouseleave", esconder);
+    });
+    txt(svg, m.l + (W - m.l - m.r) / 2, H - 4, "faixa de horário", { "text-anchor": "middle" });
+    $("t-faixas").innerHTML = `<tr><th>Faixa</th><th>Seções</th>${CANDS.map(c => `<th>${nome(c)} 1º</th><th>${nome(c)} 2º</th><th>aumento</th><th>% válidos 2º</th>`).join("")}</tr>` +
+      gs.map(o => `<tr><td>${rot(o)}</td><td>${fmt(o.n)}</td>${CANDS.map((c, j) =>
+        `<td>${fmt(o.c1[j])}</td><td>${fmt(o.c2[j])}</td><td>${sinal(100 * (o.c2[j] - o.c1[j]) / o.c1[j], 2)}%</td><td>${fmt(100 * o.c2[j] / o.v2, 2)}%</td>`).join("")}</tr>`).join("");
+  }
+
+  function acumulado(idx, campoHora, gr, onde) {
+    const T = +campoHora.slice(-1);
+    const H = C["hora_bu_recebido_t" + T], V = C["validos_t" + T];
+    const porMin = new Map();
+    for (const i of idx) {
+      const m = minutos(H[i]); if (m == null) continue;
+      let o = porMin.get(m); if (!o) { o = { v: 0, c: CANDS.map(() => 0), n: 0 }; porMin.set(m, o); }
+      o.v += V[i] || 0; o.n++; CANDS.forEach((c, j) => o.c[j] += C[`${c.coluna}_t${T}`][i] || 0);
+    }
+    const ks = [...porMin.keys()].sort((a, b) => a - b);
+    let av = 0, an = 0; const ac = CANDS.map(() => 0); const pts = [];
+    for (const k of ks) { const o = porMin.get(k); av += o.v; an += o.n; o.c.forEach((v, j) => ac[j] += v); pts.push({ k, n: an, p: ac.map(v => 100 * v / av) }); }
+    $("sub-acum").textContent = `% dos votos válidos acumulados conforme os boletins do ${T}º turno chegavam ao TSE (minuto a minuto) · ${onde}. O início da curva reflete poucas seções.`;
+    legenda($("leg-acum"));
+    const el = $("c-acum"); el.innerHTML = "";
+    if (!pts.length) return;
+    const W = 980, Hh = 300, m = { l: 52, r: 120, t: 16, b: 36 };
+    const svg = s("svg", { viewBox: `0 0 ${W} ${Hh}`, role: "img", "aria-label": "Apuração acumulada" }, el);
+    const all = pts.filter(p => p.n >= Math.min(50, an)).flatMap(p => p.p);
+    const tk = ticks(Math.min(...all), Math.max(...all));
+    const y0 = Math.min(tk[0], ...all), y1 = Math.max(tk[tk.length - 1], ...all);
+    const x0 = ks[0], x1 = ks[ks.length - 1] || x0 + 1;
+    const x = (k) => m.l + (W - m.l - m.r) * (k - x0) / (x1 - x0 || 1);
+    const y = (v) => m.t + (Hh - m.t - m.b) * (1 - (Math.max(y0, Math.min(y1, v)) - y0) / (y1 - y0 || 1));
+    gradeY(svg, y, tk, m.l, W - m.r, v => fmt(v) + "%");
+    const passoX = x1 - x0 <= 240 ? 30 : 60;
+    for (let h = Math.ceil(x0 / passoX) * passoX; h <= x1; h += passoX) txt(svg, x(h), Hh - m.b + 16, hhmm(h), { "text-anchor": "middle" });
+    CANDS.forEach((c, j) => {
+      const d = pts.map((p, i) => (i ? "L" : "M") + x(p.k).toFixed(1) + "," + y(p.p[j]).toFixed(1)).join("");
+      s("path", { d, fill: "none", stroke: COR[j], "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+      const u = pts[pts.length - 1];
+      s("circle", { cx: x(u.k), cy: y(u.p[j]), r: 4, fill: COR[j], stroke: "var(--surface-1)", "stroke-width": 2 }, svg);
+      txt(svg, x(u.k) + 10, y(u.p[j]) + 4, `${nome(c).split(" ")[0]} ${fmt(u.p[j], 2)}%`, { class: "val" });
+    });
+    const cross = s("line", { y1: m.t, y2: Hh - m.b, stroke: "var(--axis)", "stroke-width": 1, visibility: "hidden" }, svg);
+    const dots = CANDS.map((c, j) => s("circle", { r: 4, fill: COR[j], stroke: "var(--surface-1)", "stroke-width": 2, visibility: "hidden" }, svg));
+    const hit = s("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: Hh - m.t - m.b, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", ev => {
+      const r = svg.getBoundingClientRect(), k = x0 + ((ev.clientX - r.left) * W / r.width - m.l) / (W - m.l - m.r) * (x1 - x0);
+      let p = pts[0]; for (const q of pts) { if (q.k <= k) p = q; else break; }
+      cross.setAttribute("x1", x(p.k)); cross.setAttribute("x2", x(p.k)); cross.setAttribute("visibility", "visible");
+      dots.forEach((d, j) => { d.setAttribute("cx", x(p.k)); d.setAttribute("cy", y(p.p[j])); d.setAttribute("visibility", "visible"); });
+      mostrar(ev, `<b>até ${hhmm(p.k)}</b> · ${fmt(p.n)} de ${fmt(an)} seções<br>` + CANDS.map((c, j) => linhaTip(j, `${nome(c)}: ${fmt(p.p[j], 2)}%`)).join(""));
+    });
+    hit.addEventListener("mouseleave", () => { esconder(); cross.setAttribute("visibility", "hidden"); dots.forEach(d => d.setAttribute("visibility", "hidden")); });
+  }
+
+  function hist(idx, ci, onde) {
+    const c = CANDS[ci], a1 = C[c.coluna + "_t1"], a2 = C[c.coluna + "_t2"];
+    const MIN = 50, LO = -20, HI = 40;
+    const bins = new Map(); let n = 0, abaixo = 0, acima = 0;
+    for (const i of idx) {
+      if ((C.validos_t1[i] || 0) < MIN || (C.validos_t2[i] || 0) < MIN) continue;
+      const d = 100 * a2[i] / C.validos_t2[i] - 100 * a1[i] / C.validos_t1[i];
+      n++;
+      if (d < LO) { abaixo++; continue; } if (d >= HI) { acima++; continue; }
+      const b = Math.floor(d); bins.set(b, (bins.get(b) || 0) + 1);
+    }
+    $("sub-hist").textContent = `Quantas seções tiveram cada variação de ${nome(c)}, em pontos percentuais dos votos válidos (2º turno − 1º turno). Seções com pelo menos ${MIN} votos válidos nos dois turnos: ${fmt(n)} · ${onde}.` +
+      (abaixo || acima ? ` Fora da escala: ${fmt(abaixo)} abaixo de ${LO} pp e ${fmt(acima)} acima de +${HI} pp.` : "");
+    const el = $("c-hist"); el.innerHTML = "";
+    const W = 980, H = 260, m = { l: 52, r: 12, t: 12, b: 36 };
+    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Histograma da variação por seção" }, el);
+    const max = Math.max(1, ...bins.values()), tk = ticks(0, max, 4), top = tk[tk.length - 1];
+    const y = (v) => m.t + (H - m.t - m.b) * (1 - v / top);
+    gradeY(svg, y, tk, m.l, W - m.r, v => fmt(v));
+    const bw = (W - m.l - m.r) / (HI - LO);
+    const x = (b) => m.l + (b - LO) * bw;
+    for (let b = LO; b < HI; b++) {
+      const v = bins.get(b) || 0;
+      if (v) s("path", { d: barra(x(b) + 1, y(v), bw - 2, y(0) - y(v), true), fill: COR[ci] }, svg);
+      const hit = s("rect", { x: x(b), y: m.t, width: bw, height: H - m.t - m.b, fill: "transparent" }, svg);
+      hit.addEventListener("mousemove", ev => mostrar(ev, `<b>${sinal(b, 0)} a ${sinal(b + 1, 0)} pp</b><br>${fmt(v)} seções`));
+      hit.addEventListener("mouseleave", esconder);
+    }
+    s("line", { x1: x(0), x2: x(0), y1: m.t, y2: H - m.b, stroke: "var(--text-muted)", "stroke-width": 1 }, svg);
+    for (let b = LO; b <= HI; b += 10) txt(svg, x(b), H - m.b + 16, sinal(b, 0) + " pp", { "text-anchor": "middle" });
+  }
+
+  function perdas(idx, ci, onde) {
+    const c = CANDS[ci], a1 = C[c.coluna + "_t1"], a2 = C[c.coluna + "_t2"];
+    const lista = idx.filter(i => C.aptos_t1[i] != null && C.aptos_t2[i] != null)
+      .map(i => ({ i, d: (a2[i] || 0) - (a1[i] || 0) })).sort((p, q) => p.d - q.d).slice(0, 15);
+    $("sub-perdas").textContent = `${nome(c)}: as 15 seções com maior queda em número de votos do 1º para o 2º turno · ${onde}. Compare com a variação do comparecimento: se menos eleitores votaram, todos tendem a perder votos.`;
+    $("t-perdas").innerHTML = `<tr><th>Município</th><th>Zona</th><th>Seção</th><th>Votos 1º</th><th>Votos 2º</th><th>Diferença</th><th>% válidos 1º</th><th>% válidos 2º</th><th>Comparec. 1º</th><th>Comparec. 2º</th><th>Mesma urna?</th></tr>` +
+      lista.map(({ i, d }) => `<tr><td>${C.nm_municipio[i]}</td><td>${C.nr_zona[i]}</td><td>${C.nr_secao[i]}</td><td>${fmt(a1[i])}</td><td>${fmt(a2[i])}</td><td>${sinal(d, 0)}</td>
+        <td>${fmt(100 * a1[i] / C.validos_t1[i], 1)}%</td><td>${fmt(100 * a2[i] / C.validos_t2[i], 1)}%</td>
+        <td>${fmt(C.comparecimento_t1[i])}</td><td>${fmt(C.comparecimento_t2[i])}</td><td>${C.urna_t1[i] === C.urna_t2[i] ? "sim" : "não"}</td></tr>`).join("");
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
