@@ -23,10 +23,12 @@ computador (por exemplo, `Documentos\urna-perguntas`).
 
 ## 2. Baixe os boletins de urna
 
-Os boletins são publicados pelo TSE no
-[Portal de Dados Abertos — Resultados 2026 — Boletim de Urna](https://dadosabertos.tse.jus.br/dataset/resultados-2026-boletim-de-urna).
+Os boletins são publicados pelo TSE no Portal de Dados Abertos. Página oficial com todos os arquivos:
+
+**👉 https://dadosabertos.tse.jus.br/dataset/resultados-2026-boletim-de-urna**
+
 Baixe o **1º e o 2º turno** do estado que quer analisar e **coloque os arquivos na pasta `boletins/`** do
-projeto. Não precisa extrair o ZIP.
+projeto. Não precisa extrair o ZIP. Para facilitar, os links diretos de cada estado estão na tabela abaixo:
 
 | UF | Estado | 1º turno (4/out/2026) | 2º turno (25/out/2026) |
 |---|---|---|---|
